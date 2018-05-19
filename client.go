@@ -45,6 +45,8 @@ func (c *Client) heartbeat() {
 			time.Sleep(HEARTBEAT_RATE * time.Second)
 		case <-time.After(HEARTBEAT_RATE * time.Second):
 			c.sendError(errors.New("Pong timed out"))
+		case <-c.Stop:
+			return
 		}
 	}
 }
