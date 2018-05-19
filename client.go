@@ -20,6 +20,7 @@ type Client struct {
 	Events             chan *Event
 	Stop               chan bool
 	Errors             chan error
+	pongs              chan bool
 	subscribedChannels *subscribedChannels
 	binders            map[string]chan *Event
 	m                  sync.Mutex
@@ -39,7 +40,12 @@ func (c *Client) heartbeat() {
 		if err := websocket.Message.Send(c.ws, `{"event":"pusher:ping","data":"{}"}`); err != nil {
 			c.sendError(err)
 		}
-		time.Sleep(HEARTBEAT_RATE * time.Second)
+		select {
+		case <-c.pongs:
+			time.Sleep(HEARTBEAT_RATE * time.Second)
+		case <-time.After(HEARTBEAT_RATE * time.Second):
+			c.sendError(errors.New("Pong timed out"))
+		}
 	}
 }
 
@@ -76,6 +82,7 @@ func (c *Client) listen() {
 		case "pusher:ping":
 			websocket.Message.Send(c.ws, `{"event":"pusher:pong","data":"{}"}`)
 		case "pusher:pong":
+			c.pongs <- true
 		case "pusher:error":
 			c.sendError(fmt.Errorf("Event error received : %s", event.Data))
 		default:
@@ -176,6 +183,7 @@ func NewCustomClient(appKey, host, scheme string) (*Client, error) {
 		Events:             make(chan *Event, EVENT_CHANNEL_BUFF_SIZE),
 		Stop:               make(chan bool),
 		Errors:             make(chan error),
+		pongs:              make(chan bool),
 		subscribedChannels: sChannels,
 		binders:            make(map[string]chan *Event)}
 	go pClient.heartbeat()
